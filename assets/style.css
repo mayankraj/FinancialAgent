@@ -1,0 +1,77 @@
+/* Main container styling */
+.main {
+    padding: 2rem;
+}
+
+/* Streamlit elements styling */
+.stButton button {
+    background-color: #0066cc;
+    color: white;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    border: none;
+}
+
+.stButton button:hover {
+    background-color: #0052a3;
+}
+
+/* File uploader styling */
+.uploadedFile {
+    border: 1px solid #e6e6e6;
+    border-radius: 4px;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+
+/* Dashboard container styling */
+.element-container {
+    background-color: white;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Chart styling */
+.plot-container {
+    background-color: white;
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+/* Success/Error message styling */
+.stSuccess, .stError {
+    padding: 1rem;
+    border-radius: 4px;
+    margin: 1rem 0;
+}
+
+/* Sidebar styling */
+.sidebar .sidebar-content {
+    background-color: #f8f9fa;
+}
+
+/* Typography */
+h1, h2, h3 {
+    color: #262730;
+    font-weight: 600;
+}
+
+/* Data table styling */
+.dataframe {
+    font-size: 0.9rem;
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.dataframe th {
+    background-color: #f0f2f6;
+    padding: 0.5rem;
+    text-align: left;
+}
+
+.dataframe td {
+    padding: 0.5rem;
+    border-bottom: 1px solid #e6e6e6;
+}
