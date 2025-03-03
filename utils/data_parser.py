@@ -2,10 +2,11 @@ import pandas as pd
 import numpy as np
 from PyPDF2 import PdfReader
 import re
+from datetime import datetime
 
 def parse_pdf(file_stream):
     """
-    Extract tabular data from PDF file
+    Extract tabular data from PDF file with enhanced parsing
     """
     try:
         # Create PDF reader object
@@ -14,37 +15,90 @@ def parse_pdf(file_stream):
         # Extract text from all pages
         text = ""
         for page in pdf.pages:
-            text += page.extract_text()
+            text += page.extract_text() + "\n"
 
-        # Simple parsing logic - looks for common patterns in financial statements
-        # This is a basic implementation - can be enhanced based on specific PDF formats
+        # Enhanced data extraction
         data = []
-
-        # Split into lines and process
         lines = text.split('\n')
-        for line in lines:
-            # Look for lines with date and amount patterns
-            date_match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2}', line)
-            amount_match = re.search(r'\$?\d{1,3}(?:,\d{3})*(?:\.\d{2})?', line)
+
+        # Common date formats in financial statements
+        date_patterns = [
+            r'\d{1,2}/\d{1,2}/\d{2,4}',  # MM/DD/YYYY or DD/MM/YYYY
+            r'\d{4}-\d{2}-\d{2}',        # YYYY-MM-DD
+            r'[A-Za-z]+ \d{1,2},? \d{4}', # Month DD, YYYY
+            r'\d{1,2}-[A-Za-z]{3}-\d{4}'  # DD-Mon-YYYY
+        ]
+
+        # Amount patterns
+        amount_pattern = r'[-+]?\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?'
+
+        # Category keywords
+        category_patterns = {
+            'Equity': ['stock', 'equity', 'share', 'dividend', 'etf'],
+            'Fixed Income': ['bond', 'fixed income', 'interest', 'coupon'],
+            'Cash': ['cash', 'money market', 'deposit'],
+            'Real Estate': ['reit', 'property', 'real estate'],
+            'Alternative': ['commodity', 'crypto', 'alternative']
+        }
+
+        for i, line in enumerate(lines):
+            # Look for date
+            date_match = None
+            for pattern in date_patterns:
+                match = re.search(pattern, line)
+                if match:
+                    date_match = match.group(0)
+                    break
+
+            # Look for amount
+            amount_match = re.search(amount_pattern, line)
 
             if date_match and amount_match:
-                date = date_match.group(0)
-                amount = float(amount_match.group(0).replace('$', '').replace(',', ''))
-                category = 'Unclassified'  # Default category
+                try:
+                    # Parse date
+                    date_str = date_match
+                    # Try different date formats
+                    for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y', '%B %d, %Y', '%d-%b-%Y']:
+                        try:
+                            parsed_date = datetime.strptime(date_str, fmt)
+                            break
+                        except ValueError:
+                            continue
 
-                # Try to determine category based on keywords
-                if any(keyword in line.lower() for keyword in ['stock', 'equity', 'share']):
-                    category = 'Equity'
-                elif any(keyword in line.lower() for keyword in ['bond', 'fixed income']):
-                    category = 'Fixed Income'
+                    # Clean and parse amount
+                    amount_str = amount_match.group(0)
+                    amount = float(amount_str.replace('$', '').replace(',', '').strip())
 
-                data.append({
-                    'Date': date,
-                    'Amount': amount,
-                    'Category': category
-                })
+                    # Determine category
+                    category = 'Other'
+                    line_lower = line.lower()
+                    for cat, keywords in category_patterns.items():
+                        if any(keyword in line_lower for keyword in keywords):
+                            category = cat
+                            break
 
-        return pd.DataFrame(data)
+                    # Look for transaction type in surrounding lines
+                    context = ' '.join(lines[max(0, i-2):min(len(lines), i+3)]).lower()
+                    if 'purchase' in context or 'buy' in context:
+                        amount = abs(amount)
+                    elif 'sale' in context or 'sell' in context:
+                        amount = -abs(amount)
+
+                    data.append({
+                        'Date': parsed_date.strftime('%Y-%m-%d'),
+                        'Amount': amount,
+                        'Category': category
+                    })
+
+                except Exception as e:
+                    print(f"Warning: Skipping line due to parsing error: {e}")
+                    continue
+
+        if not data:
+            raise ValueError("No valid financial data found in the PDF")
+
+        df = pd.DataFrame(data)
+        return df
 
     except Exception as e:
         raise Exception(f"Error parsing PDF: {str(e)}")
@@ -64,11 +118,17 @@ def parse_statement(file_stream, filename):
         # Basic validation
         required_columns = ['Date', 'Amount', 'Category']
         if not all(col in df.columns for col in required_columns):
-            raise ValueError("Missing required columns in the statement")
+            raise ValueError(f"Missing required columns in the statement. Required: {required_columns}, Found: {list(df.columns)}")
 
         # Clean and preprocess data
         df['Date'] = pd.to_datetime(df['Date'])
         df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
+
+        # Drop rows with invalid data
+        df = df.dropna(subset=['Date', 'Amount'])
+
+        if len(df) == 0:
+            raise ValueError("No valid data rows found after cleaning")
 
         # Calculate additional metrics
         df['equity_exposure'] = df.apply(calculate_equity_exposure, axis=1)
@@ -83,7 +143,7 @@ def calculate_equity_exposure(row):
     """
     Calculate equity exposure for each transaction
     """
-    if 'equity' in str(row['Category']).lower():
+    if row['Category'].lower() in ['equity', 'stock', 'etf']:
         return row['Amount']
     return 0
 
@@ -91,7 +151,15 @@ def calculate_risk_score(row):
     """
     Calculate risk score based on transaction parameters
     """
+    risk_weights = {
+        'Equity': 1.5,
+        'Fixed Income': 0.8,
+        'Cash': 0.2,
+        'Real Estate': 1.2,
+        'Alternative': 1.8,
+        'Other': 1.0
+    }
+
     base_score = 1.0
-    if row['equity_exposure'] > 0:
-        base_score *= 1.5
-    return base_score
+    weight = risk_weights.get(row['Category'], 1.0)
+    return base_score * weight * (abs(row['Amount']) / 10000)  # Scale by transaction size
