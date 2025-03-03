@@ -1,0 +1,1 @@
+Create a saas application template for financial advisors where they can upload statement data. you need to extract that statement data and parse it. then we need to store that data in our database. we also need to show some kind of dashboard for that uploaded statement on equity exposure and some other. it needs to be scalable.
